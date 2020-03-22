@@ -35,7 +35,7 @@ int main(int argc, char* args[]) // end me pls
 
       //Fill the surface white
       //SDL_FillRect(Screen, NULL, SDL_MapRGB(Screen->format, 0xFF, 0xFF, 0xFF));
-      line *a = new line(coordinates(), 0.1, 2, coordinates(-0.1, -0.1), 1, 0.3);// = line(coordinates(), coordinates(1, 1));
+      line *a = new line(coordinates(), 0.1, 2, coordinates(0.1, 0.1), 1, 0.3);// = line(coordinates(), coordinates(1, 1));
       scene S(window);
       S.PushObject(a); // FIND OUT WHATS HAPPENIN
       
