@@ -6,6 +6,7 @@
 #include <assert.h>
 
 using namespace std;
+
  
 
 typedef class text
