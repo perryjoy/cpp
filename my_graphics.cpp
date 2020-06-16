@@ -1,29 +1,146 @@
 #include "my_graphics.h"
+#include <SDL_ttf.h>
+
 
 /// coord
 
-hit_by coordinates::withinrange(const coordinates &range)
+
+
+
+bool a_coordinates::withinrange(const a_coordinates &range) const
+{
+  return (x <= range.x && y <= range.y);
+}
+bool a_coordinates::withinrange(const a_coordinates &pos, const a_coordinates &range) const
+{
+  return (x >= pos.x && y >= pos.y && x <= pos.x + range.x && y <= pos.y + range.y);
+}
+double a_coordinates::len(void)
+{
+  return sqrt((double)(x * x + y * y));
+}
+double a_coordinates::r(const a_coordinates &second_dot)
+{
+  return sqrt((double)(x - second_dot.x)*(x - second_dot.x) + (y - second_dot.y)*(y - second_dot.y));
+}
+double a_coordinates::get_angle()
+{
+  double phi;
+  if (y == 0)
+    phi = x > 0 ? 0 : M_PI;
+  else
+    if (x == 0)
+      phi = y > 0 ? M_PI_2 : M_PI + M_PI_2;
+    else
+    {
+      phi = acos(x / sqrt(x*x + y*y));
+      if (y > 0)
+        phi = 2 * M_PI - phi;
+    }
+  return phi;
+}
+
+
+
+r_coordinates::r_coordinates(const a_coordinates& pos, const int& W, const int& H)
+{
+  int SZ = W > H ? W : H;
+  this->x = (2.0 * pos.x - W) / SZ;
+  this->y = (H - 2.0 * pos.y) / SZ;
+}
+r_coordinates::r_coordinates(const a_coordinates& pos, const a_coordinates& screen)
+{
+  int SZ = screen.x > screen.y ? screen.x : screen.y;
+  this->x = (2.0 * pos.x - screen.x) / SZ;
+  this->y = (screen.y - 2.0 * pos.y) / SZ;
+}
+a_coordinates r_coordinates::rel2abs(const a_coordinates &screen)
+{
+  int SZ = screen.x > screen.y ? screen.x : screen.y;
+  a_coordinates res;
+  res.x = (int)round(this->x * SZ / 2.0 + screen.x / 2.0);
+  res.y = (int)round(-this->y * SZ / 2.0 + screen.y / 2.0);
+  return res;
+}
+bool r_coordinates::withinrange(const r_coordinates &range) 
 {
   assert(range.x >= 0 && range.y >= 0);
-  if (x < -range.x)
-      return LEFT;
-  if (x > range.x)
-      return RIGHT;
-  if (y < -range.y)
-      return BOTTOM;
-  if (y > range.y)
-      return TOP;
-  return NONE;
+  return (fabs(x) <= range.x && fabs(y) <= range.y);
+}
+bool r_coordinates::withinrange(const r_coordinates &pos, const r_coordinates &range) const
+{
+  return (x >= pos.x && y >= pos.y && x <= pos.x + range.x && y <= pos.y + range.y);
+}
+bool r_coordinates::withinrange_topleft(const r_coordinates &pos, const r_coordinates &range) const
+{
+  return (x >= pos.x && y <= pos.y && x <= pos.x + range.x && y >= pos.y + range.y);
+}
+double r_coordinates::len(void)
+{
+  return sqrt(x * x + y * y);
+}
+double r_coordinates::r(const r_coordinates &second_dot)
+{
+  return sqrt((x - second_dot.x)*(x - second_dot.x) + (y - second_dot.y)*(y - second_dot.y));
+}
+double r_coordinates::get_angle()
+{
+  double phi;
+  if (fabs(y) <= DBL_EPSILON)
+    phi = x > 0 ? 0 : M_PI;
+  else
+    if (fabs(x) <= DBL_EPSILON)
+      phi = y > 0 ? M_PI_2 : M_PI + M_PI_2;
+    else
+    {
+      phi = acos(x / sqrt(x*x + y * y));
+      if (y > 0)
+        phi = 2 * M_PI - phi;
+    }
+  return phi;
 }
 
 /// scene
 
-
-scene::scene(SDL_Window *w)
+int SDL_SetRenderDrawColor(SDL_Renderer *ren, colorset c)
 {
-  ren = SDL_CreateRenderer(w, -1, 0);
-  SDL_GetWindowSize(w, &width, &height);
+  return SDL_SetRenderDrawColor(ren, c.r, c.g, c.b, SDL_ALPHA_OPAQUE);
+}
+void SDL_GetWindowSize(SDL_Window *w, a_coordinates &sz)
+{
+  SDL_GetWindowSize(w, &(sz.x), &(sz.y));
+}
+int SDL_RenderDrawLine(SDL_Renderer *ren, a_coordinates pt1, a_coordinates pt2)
+{
+  return SDL_RenderDrawLine(ren, pt1.x, pt1.y, pt2.x, pt2.y);
+}
+
+scene::scene(int w, int h)
+{
+  event_flags = 0;
+  win = NULL;
+  ren = NULL;
+  Size = a_coordinates(w, h);
   UpdateScreenLimits();
+
+  if (SDL_Init(SDL_INIT_EVERYTHING) < 0)
+  {
+    cerr << "SDL could not initialize! SDL_Error: " << SDL_GetError() << endl;
+  }
+  else
+  {
+    win = SDL_CreateWindow("Karaev YG development", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, w, h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+    if (win == NULL)
+    {
+      cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << endl;
+    }
+    else
+    { 
+      //SDL_UpdateWindowSurface(win);
+      ren = SDL_CreateRenderer(win, -1, 0);
+      //SDL_RenderPresent(ren);
+    }
+  }
 }
 void scene::DeleteFrontObject(void)
 {
@@ -32,9 +149,37 @@ void scene::DeleteFrontObject(void)
 }
 void scene::DrawScene(void)
 {
+  SDL_Event event;
   static double tStart = SDL_GetTicks() / 1000.0;
   static double tFinish = SDL_GetTicks() / 1000.0;
-  SDL_SetRenderDrawColor(ren, 0, 0, 0, 0);
+  event_flags = 0;
+  while (SDL_PollEvent(&event))
+  {
+    switch (event.type)
+    {
+    case SDL_WINDOWEVENT:
+      if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+      {
+        event_flags |= _EVENT_WINDOWS_RESIZED;
+        Size = a_coordinates(event.window.data1, event.window.data2);
+      }
+      break;
+    case SDL_MOUSEBUTTONUP:
+      event_flags |= _EVENT_MOUSE_UNPRESSED;
+      break;
+    case SDL_QUIT:
+      event_flags |= _EVENT_WINDOWS_CLOSED;
+      break;
+    }
+  }
+  if (event_flags & _EVENT_WINDOWS_RESIZED)
+  {
+
+    //SDL_SetWindowSize(win, event.window.data1, event.window.data2);
+    //SDL_UpdateWindowSurface(win);
+    UpdateScreenLimits();
+  }
+  SDL_SetRenderDrawColor(ren, 100, 100, 100, 0);
   SDL_RenderClear(ren);
   tStart = SDL_GetTicks() / 1000.0;
   for (auto obj : entry)
@@ -42,50 +187,64 @@ void scene::DrawScene(void)
     obj->update(*this, tStart - tFinish);
     obj->draw(*this);
   }
-  tFinish = tStart;
+  tFinish = tStart;  
+  SDL_RenderPresent(ren);
 }
-void scene::DrawLine(colorset c, coordinates pt1, coordinates pt2, int lineWidth)
+void scene::DrawLine(colorset c, r_coordinates pt1, r_coordinates pt2, int lineWidth)
 {
-  int pixelScale = ScreenSize();
-  int x1 = pt1.x_int(width, pixelScale);
-  int x2 = pt2.x_int(width, pixelScale);
-  int y1 = pt1.y_int(height, pixelScale);
-  int y2 = pt2.y_int(height, pixelScale);
+  a_coordinates p1 = pt1.rel2abs(Size);
+  a_coordinates p2 = pt2.rel2abs(Size);
 
-  Sint16 dx = x2 - x1, dy = y2 - y1;
+  a_coordinates dpt = p2-p1;
   /* Всегда рисуем основную линию */
-  SDL_SetRenderDrawColor(ren, EXPAND_COLORSET(c));
-  SDL_RenderDrawLine(ren, x1, y1, x2, y2);
-  if (lineWidth > 1 && !(dx == 0 && dy == 0))
+  SDL_SetRenderDrawColor(ren, c);
+  SDL_RenderDrawLine(ren, p1, p2);
+  if (lineWidth > 1 && !(dpt == a_coordinates()))
   {
     double r = (double)lineWidth / 2; /* радиус "кисти" для рисования */
-    double phi; /* направляющий угол */
+    double phi = dpt.get_angle(); /* направляющий угол */
     double ri; /* для рисования параллельных линий */
 
-    if (dy == 0)
-      phi = dx > 0 ? 0 : M_PI;
-    else
-      if (dx == 0)
-        phi = dy > 0 ? M_PI_2 : M_PI + M_PI_2;
-      else
-        phi = acos(dx / sqrt(dx*dx + dy * dy));
-    if (dy > 0)
-      phi = 2 * M_PI - phi;
+  
     for (ri = 0; ri < r; ri += 0.5)
     { /* рисуем линии, параллельные исходной */
-      Sint16 px1, py1, px2, py2;
-      px1 = floor(x1 + ri * cos(phi + M_PI_2));
-      py1 = floor(y1 - ri * sin(phi + M_PI_2));
-      px2 = floor(x2 + ri * cos(phi + M_PI_2));
-      py2 = floor(y2 - ri * sin(phi + M_PI_2));
-      SDL_RenderDrawLine(ren, px1, py1, px2, py2);
-      px1 = floor(x1 + ri * cos(phi - M_PI_2));
-      py1 = floor(y1 - ri * sin(phi - M_PI_2));
-      px2 = floor(x2 + ri * cos(phi - M_PI_2));
-      py2 = floor(y2 - ri * sin(phi - M_PI_2));
-      SDL_RenderDrawLine(ren, px1, py1, px2, py2);
+      a_coordinates p1tmp, p2tmp;
+      p1tmp = p1 + a_coordinates((int)floor(ri * cos(phi + M_PI_2)), (int)floor(-ri * sin(phi + M_PI_2)));
+      p2tmp = p2 + a_coordinates((int)floor(ri * cos(phi + M_PI_2)), (int)floor(-ri * sin(phi + M_PI_2)));
+      SDL_RenderDrawLine(ren, p1tmp, p2tmp);
+      p1tmp = p1 + a_coordinates((int)floor(ri * cos(phi - M_PI_2)), (int)floor(-ri * sin(phi - M_PI_2)));
+      p2tmp = p2 + a_coordinates((int)floor(ri * cos(phi - M_PI_2)), (int)floor(-ri * sin(phi - M_PI_2)));
+      SDL_RenderDrawLine(ren, p1tmp, p2tmp);
     }
   }
+}
+SDL_Rect InitSdlRect(a_coordinates pos, a_coordinates size)
+{
+
+  SDL_Rect x = { pos.x, pos.y, size.x, size.y };
+  return x;
+}
+void scene::DrawRectangle(colorset c, r_coordinates leftTopCorner, r_coordinates size)
+{
+  SDL_SetRenderDrawColor(ren, c);
+  SDL_Rect r = InitSdlRect(leftTopCorner.rel2abs(Size), size.rel2abs(Size)-Size*0.5);
+  SDL_RenderFillRect(ren, &r);
+}
+void scene::DrawText(string T, colorset c, r_coordinates leftTopCorner, r_coordinates size)
+{
+  TTF_Init();
+  TTF_Font* Sans = TTF_OpenFont("OpenSans-Light.ttf", 100); //this opens a font style and sets a size
+  SDL_Color C = c.my_col_2_sdl();
+  SDL_Surface* surfaceMessage = TTF_RenderText_Solid(Sans, T.c_str(), C); 
+  SDL_Texture* Message = SDL_CreateTextureFromSurface(ren, surfaceMessage); 
+
+  SDL_Rect Message_rect = InitSdlRect(leftTopCorner.rel2abs(Size), size.rel2abs(Size) - Size * 0.5);;
+  SDL_RenderCopy(ren, Message, NULL, &Message_rect); 
+
+  TTF_CloseFont(Sans);
+  SDL_FreeSurface(surfaceMessage);
+  SDL_DestroyTexture(Message);
+  TTF_Quit();
 }
 SDL_Renderer* scene::GetRen(void)
 {
@@ -97,29 +256,49 @@ void scene::PushObject(scene_object* obj)
 }
 scene_object* scene::PopObject(scene_object *toRemove)
 {
-  entry.remove_if([toRemove](scene_object *o) {return o == toRemove; });
+  if (toRemove != nullptr)
+    entry.remove_if([toRemove](scene_object *o) {return o == toRemove; });
   return toRemove;
 }
 void scene::UpdateScreenLimits(void)
 {
-  if (width > height)
-    screen_limits = coordinates(1, (double)height / width);
+  double proportion = Size.get_angle();
+  if (proportion > M_PI_4)
+    screen_limits = r_coordinates(atan(proportion), 1);
   else
-    screen_limits = coordinates((double)width / height, 1);
+    screen_limits = r_coordinates(1, tan(proportion));
 }
-coordinates scene::GetScreenLimits(void)
+r_coordinates scene::GetScreenLimits(void)
 {
   return screen_limits;
 }
+r_coordinates scene::GetMousePos(void)
+{
+  int x, y;
+
+  SDL_GetMouseState(&x, &y);
+  return r_coordinates(a_coordinates(x,y), this->Size);
+}
+r_coordinates scene::GetMousePosAndState(int &mouse_buttons_state)
+{
+  int x, y;
+
+  mouse_buttons_state = int(SDL_GetMouseState(&x, &y));
+  mouse_buttons_state = ((SDL_BUTTON(SDL_BUTTON_LEFT) & mouse_buttons_state) ? _MOUSE_LEFT : _MOUSE_NONE) |
+                        ((SDL_BUTTON(SDL_BUTTON_RIGHT) & mouse_buttons_state) ? _MOUSE_RIGHT : _MOUSE_NONE) | 
+                        ((SDL_BUTTON(SDL_BUTTON_MIDDLE) & mouse_buttons_state) ? _MOUSE_MIDDLE : _MOUSE_NONE);
+  return r_coordinates (a_coordinates(x, y), this->Size);
+}
 int scene::ScreenSize(void)
 {
-  return width > height ? width : height;
+  assert(false);
+  return 0;
 }
 
 /// line
 
 
-line::line(coordinates posI, double lenI, int widthI, coordinates speedI, double angleI, double aspeedI, colorset colI)
+line::line(r_coordinates posI, double lenI, int widthI, r_coordinates speedI, double angleI, double aspeedI, colorset colI)
 {
   pos = posI;
   len = lenI;
@@ -134,7 +313,75 @@ line::~line(void)
 {
   delete tr;
 }
+bool line::iscollided(scene& env, double dt) 
+{
+  r_coordinates next = pos + (speed * dt);
+  double anext = angle + aspeed * dt;
+  return (next + (r_coordinates(len) ^ anext)).withinrange(env.GetScreenLimits()) &&
+    (next - (r_coordinates(len) ^ anext)).withinrange(env.GetScreenLimits()) ? false : true;
+}
+void line::update(scene& env, double dt)
+{
+  static double dtTrace = 0;
 
+  if (!iscollided(env, dt))
+  {
+    pos += (speed * dt);
+    angle += aspeed * dt;
+    if (angle >= M_PI)
+      angle -= M_PI; 
+  }
+  else
+  {
+    r_coordinates next = pos + (speed * dt);
+    double anext = angle + aspeed * dt;
+    hit_by screenEdge = (hit_by) ((next + (r_coordinates(len) ^ anext)).withinrange(env.GetScreenLimits()) + (next - (r_coordinates(len) ^ anext)).withinrange(env.GetScreenLimits()));
+    r_coordinates n, e;
+    r_coordinates V1, dV;
+    double V2;
+    switch (screenEdge)
+    {
+    case LEFT:
+      n = r_coordinates(1, 0);
+      e = r_coordinates(1, 0) ^ (angle > M_PI_2 ? angle - M_PI : angle);
+      break;
+    case RIGHT:
+      n = r_coordinates(-1, 0);
+      e = r_coordinates(1, 0) ^ (angle > M_PI_2 ? angle : angle - M_PI);
+      break;
+    case TOP:
+      n = r_coordinates(0, -1);
+      e = r_coordinates(1, 0) ^ (angle - M_PI);
+      break;
+    case BOTTOM:
+      n = r_coordinates(0, 1);
+      e = r_coordinates(1, 0) ^ angle;
+      break;
+    }
+    V1 = e * aspeed;;
+    V2 = ((speed + (V1 * len)) * n);
+    dV = n * (-V2);
+    dV = dV * (1 + (n * e));
+    aspeed = ((dV / e) > 0 ? 1 : -1) * sqrt((speed * speed) + (aspeed * aspeed * len * len) - ((speed + dV) * (speed + dV))) / len;
+    speed += dV;
+  }
+
+  dtTrace += dt;
+  if (dtTrace > 0.1)
+  {
+    dtTrace -= 0.1;
+    tr->addprint(*this);
+    tr->update(env, dt);
+    col += colorset(10, 20, 30, 0);
+  }
+
+}
+
+void line::draw(scene& env)
+{
+  tr->draw(env);
+  env.DrawLine(col, pos + (r_coordinates(len) ^ angle), pos - (r_coordinates(len) ^ angle), width);
+}
 
 
 
@@ -164,23 +411,11 @@ void line_trace::one__line_trace_object::blur(double widthMultiplier, double alp
 {
   width *= widthMultiplier;
   len *= lenMultipllier;
-
-  int k = (int)(alphaMultiplier * 10000);
-
-  col.a = col.a * k / 10000;
-  col.r = col.r * k / 10000;
-  col.g = col.g * k / 10000;
-  col.b = col.b * k / 10000;
-
-  //col.a = (Uint8)(col.a * alphaMultiplier);
-  //col.a = (Uint8)(col.a * alphaMultiplier);
-  //col.r = (Uint8)(col.b * alphaMultiplier);
-  //col.g = (Uint8)(col.b * alphaMultiplier);
-  //col.b = (Uint8)(col.b * alphaMultiplier);
+  col *= alphaMultiplier;
 }
 void line_trace::one__line_trace_object::draw(scene &env)
 {
-  env.DrawLine(col, pos + (coordinates(len) ^ angle), pos - (coordinates(len) ^ angle), (int)width);
+  env.DrawLine(col, pos + (r_coordinates(len) ^ angle), pos - (r_coordinates(len) ^ angle), (int)width);
   SDL_SetRenderDrawColor(env.GetRen(), 255, 255, 255, 255);
 //  SDL_RenderDrawPoint(env.GetRen(), pos.x_int(width, env.ScreenSize()), pos.y_int(height, env.ScreenSize())); TEST
 }
