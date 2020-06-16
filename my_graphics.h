@@ -1,128 +1,243 @@
 #pragma once
-
-
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <SDL.h>
-//#include <SDL_gfx>
+
 #include <list>
 #include <cassert>
 #include <iostream>
 
-
+#define COLORSET_NONE colorset(0,0,0,0)
 
 using namespace std;
 
 
 const int TRACE_LEN = 20;
-const int SCREEN_WIDTH = 1280;
-const int SCREEN_HEIGHT = 512;
 
 
 
-#define EXPAND_COLORSET(C) (C).r, (C).g, (C).b, (C).a
-#define EXPAND_COORDINATES(C, H, W) (C).x_int(H), (C).y_int(W)
-
-
-typedef enum hit_by
+enum mouse_state
 {
-    NONE = 0,
-    TOP,
-    LEFT,
-    BOTTOM,
-    RIGHT
-} hit_by;
+  _MOUSE_LEFT = 1,
+  _MOUSE_RIGHT = 2,
+  _MOUSE_MIDDLE = 4,
+  _MOUSE_NONE = 0
+};
+
+enum hit_by
+{
+  NONE = 0,
+  TOP,
+  LEFT,
+  BOTTOM,
+  RIGHT
+};
+
+
+enum control_events
+{
+  _EVENT_WINDOWS_CLOSED = 1,
+  _EVENT_WINDOWS_RESIZED = 2,
+  _EVENT_MOUSE_UNPRESSED = 4,
+};
+
 
 class colorset
 {
-public:
+
   Uint8 r;
   Uint8 g;
   Uint8 b;
   Uint8 a;
-
-  colorset(Uint8 rn = 40, Uint8 gn = 40, Uint8 bn = 40, Uint8 an = 255) : r(rn), g(gn), b(bn), a(an)
+  friend int SDL_SetRenderDrawColor(SDL_Renderer *ren, colorset c);
+public:
+  colorset(Uint8 rn = 40, Uint8 gn = 40, Uint8 bn = 40, Uint8 an = 255) : r(rn), g(gn), b(bn), a(an) {}
+  bool operator == (colorset const &x)
   {
+    return (r == x.r) && (g == x.g) && (b == x.b) && (a == x.a);
+  }
+  colorset& operator +(const colorset& B)
+  {
+    colorset res;
+    res.a = (a + B.a) % 256;
+    res.r = (r + B.r) % 256;
+    res.g = (g + B.g) % 256;
+    res.b = (b + B.b) % 256;
+    return res;
+  }
+  colorset& operator -(const colorset& B)
+  {
+    colorset res;
+    res.a = (256 + a - B.a) % 256;
+    res.r = (256 + r - B.r) % 256;
+    res.g = (256 + g - B.g) % 256;
+    res.b = (256 + b - B.b) % 256;
+    return res;
+  }
+  colorset& operator +=(const colorset &B)
+  {
+    a = (a + B.a) % 256;
+    r = (r + B.r) % 256;
+    g = (g + B.g) % 256;
+    b = (b + B.b) % 256;
+    return *this;
+  }
+  colorset& operator *=(const double &mult)
+  {
+    a = (Uint8)(a * mult);
+    r = (Uint8)(r * mult);
+    g = (Uint8)(g * mult);
+    b = (Uint8)(b * mult);
+    return *this;
+  }
+  SDL_Color my_col_2_sdl(void)
+  {
+    SDL_Color res = { r, g, b, a };
+    return res;
   }
 };
 
-class coordinates
+
+class a_coordinates
 {
-public: // is it ok tho?
-  double x;
-  double y;
-  coordinates(double x, double y) : x(x), y(y)
+  // is it ok tho?
+  int x;
+  int y;
+  friend class r_coordinates;
+  friend void SDL_GetWindowSize(SDL_Window *w, a_coordinates &sz);
+  friend int SDL_RenderDrawLine(SDL_Renderer *ren, a_coordinates pt1, a_coordinates pt2);
+  friend SDL_Rect InitSdlRect(a_coordinates pos, a_coordinates size);
+  a_coordinates(double x, double y) : x((int)(x)), y((int)(y)) {}
+public:
+  a_coordinates(int x, int y) : x(x), y(y) {}
+  a_coordinates(int xy = 0) : x(xy), y(xy) {}
+  bool withinrange(const a_coordinates &range) const;
+  bool withinrange(const a_coordinates &pos, const a_coordinates &range) const;
+  double len(void);
+  double r(const a_coordinates &second_dot);
+  double get_angle();
+  a_coordinates operator + (const a_coordinates &right)
   {
+    return a_coordinates(this->x + right.x, this->y + right.y);
   }
-  coordinates(double xy = 0) : x(xy), y(0)
+  a_coordinates operator + (const double &right)
   {
+    return a_coordinates(this->x + right, this->y + right);
   }
-  hit_by withinrange(const coordinates &range);
-  int x_int(int W, int SZ)
+  a_coordinates operator - (const a_coordinates &right)
   {
-    return (int)round(x * SZ / 2.0 + W / 2.0);
+    return a_coordinates(this->x - right.x, this->y - right.y);
   }
-  int y_int(int H, int SZ)
+  a_coordinates operator - (const double &right)
   {
-    return (int)round(- y * SZ / 2.0 + H / 2.0);
+    return a_coordinates(this->x - right, this->y - right);
   }
-  coordinates operator + (const coordinates &right)
+  a_coordinates operator * (const double &right)
   {
-    return coordinates(this->x + right.x, this->y + right.y);
+    return a_coordinates(this->x * right, this->y * right);
   }
-
-  double operator / (const coordinates& right) //vector multiplication
-  {
-      return (this->x * right.y - this->y * right.x);
-  }
-  double operator * (const coordinates& right) // scalar multiplication
-  {
-      return (this->x * right.x + this->y * right.y);
-  }
-
-  coordinates operator + (const double &right)
-  {
-    return coordinates(this->x + right, this->y + right);
-  }
-  coordinates operator - (const coordinates &right)
-  {
-    return coordinates(this->x - right.x, this->y - right.y);
-  }
-  coordinates operator - (const double &right)
-  {
-    return coordinates(this->x - right, this->y - right);
-  }
-  coordinates operator * (const double &right)
-  {
-    return coordinates(this->x * right, this->y * right);
-  }
-  coordinates operator ^ (const double &angle)
-  {
-    return coordinates(this->x * cos(angle) - this->y * sin(angle), this->x * sin(angle) + this->y * cos(angle));
-  }
-
-  coordinates& operator = (coordinates right)
+  a_coordinates& operator = (a_coordinates right)
   {
     x = right.x;
     y = right.y;
     return *this;
   }
-  coordinates& operator += (const coordinates &right)
+  a_coordinates& operator += (const a_coordinates &right)
   {
     x += right.x;
     y += right.y;
     return *this;
   }
-  coordinates& operator -= (const coordinates &right)
+  a_coordinates& operator -= (const a_coordinates &right)
   {
     x -= right.x;
     y -= right.y;
     return *this;
   }
-  coordinates& operator ^= (const double &angle)
+  bool operator == (const a_coordinates &right)
+  {
+    return (x==right.x)&&(y==right.y);
+  }
+};
+
+
+class r_coordinates
+{
+// is it ok tho?
+  double x;
+  double y;
+  friend a_coordinates;
+public:
+  r_coordinates(double x, double y) : x(x), y(y) {}
+  r_coordinates(double xy = 0) : x(xy), y(xy) {}
+  r_coordinates(const a_coordinates& pos, const int& W, const int& H);
+  r_coordinates(const a_coordinates& pos, const a_coordinates& screen);
+  a_coordinates rel2abs(const a_coordinates &screen);
+  bool withinrange(const r_coordinates &range);
+  bool withinrange(const r_coordinates &pos, const r_coordinates &range) const;
+  bool withinrange_topleft(const r_coordinates &pos, const r_coordinates &range) const;
+  double len(void);
+  double r(const r_coordinates &second_dot);
+  double get_angle();
+  double operator / (const r_coordinates& right)
+  {
+    return (this->x * right.y - this->y * right.x);
+  }
+  double operator * (const r_coordinates& right)
+  {
+    return x * right.x + y * right.y;
+  }
+  r_coordinates operator + (const r_coordinates &right)
+  {
+    return r_coordinates(this->x + right.x, this->y + right.y);
+  }
+  r_coordinates operator + (const double &right)
+  {
+    return r_coordinates(this->x + right, this->y + right);
+  }
+  r_coordinates operator - (const r_coordinates &right)
+  {
+    return r_coordinates(this->x - right.x, this->y - right.y);
+  }
+  r_coordinates operator - (const double &right)
+  {
+    return r_coordinates(this->x - right, this->y - right);
+  }
+  r_coordinates operator * (const double &right)
+  {
+    return r_coordinates(this->x * right, this->y * right);
+  }
+  r_coordinates operator ^ (const double &angle)
+  {
+    return r_coordinates(this->x * cos(angle) - this->y * sin(angle), this->x * sin(angle) + this->y * cos(angle));
+  }
+  r_coordinates& operator = (r_coordinates right)
+  {
+    x = right.x;
+    y = right.y;
+    return *this;
+  }
+  r_coordinates& operator += (const r_coordinates &right)
+  {
+    x += right.x;
+    y += right.y;
+    return *this;
+  }
+  r_coordinates& operator -= (const r_coordinates &right)
+  {
+    x -= right.x;
+    y -= right.y;
+    return *this;
+  }
+  r_coordinates& operator ^= (const double &angle)
   {
     this->x = this->x * cos(angle) - this->y * sin(angle);
     this->y = this->x * sin(angle) + this->y * cos(angle);
+  }
+  r_coordinates& invY(void)
+  {
+    y = -y;
+    return *this;
   }
 };
 
@@ -132,16 +247,21 @@ class line_trace;
 
 class scene
 {
+  SDL_Window* win;
   SDL_Renderer* ren;
   list <scene_object*> entry;
-  int height;
-  int width;
-  coordinates screen_limits;
+  a_coordinates Size;
+  r_coordinates screen_limits;
 public:
+  unsigned long long event_flags;
   void UpdateScreenLimits(void);
-  coordinates GetScreenLimits(void);
-  scene(SDL_Window *w);
-  void DrawLine(colorset c, coordinates pt1, coordinates pt2, int lineWidth);
+  r_coordinates GetScreenLimits(void);
+  r_coordinates GetMousePos(void);
+  r_coordinates GetMousePosAndState(int &mouse_button_state);
+  scene(int w, int h);
+  void DrawLine(colorset c, r_coordinates pt1, r_coordinates pt2, int lineWidth);
+  void DrawRectangle(colorset c, r_coordinates leftBottomCorner, r_coordinates size);
+  void DrawText(string T, colorset c, r_coordinates leftBottomCorner, r_coordinates size);
   SDL_Renderer * GetRen(void);
   void PushObject(scene_object* obj);
   scene_object* PopObject(scene_object *toRemove);
@@ -155,23 +275,103 @@ public:
       DeleteFrontObject();
     }
     SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
   }
 };
 
 class scene_object
 {
 protected:
-  coordinates pos;
-  coordinates speed;
+  r_coordinates pos;
+  r_coordinates speed;
   double angle;
   double aspeed;
 public:
   virtual void draw(scene& env) = 0;
-  virtual hit_by iscollided(scene& env, double dt) = 0;
+  virtual bool iscollided(scene& env, double dt) = 0;
   virtual void update(scene& env, double dt) = 0;
   virtual ~scene_object(void) = default;
 };
 
+
+class rectangle : public scene_object
+{
+
+protected:
+  r_coordinates size;
+  colorset col;
+  colorset colH;
+  bool highlighted;
+public:
+  rectangle(r_coordinates p, r_coordinates sz, colorset c, colorset cH)
+  {
+    pos = p;    size = sz;    col = c;    colH = cH;    
+    angle = 0;    aspeed = 0;    speed = r_coordinates();
+  }
+  bool is_into_rect(const r_coordinates& point)
+  {
+    return point.withinrange_topleft(pos, size);
+  }
+  virtual bool iscollided(scene& env, double dt) override
+  {
+      return 0;
+  }
+  virtual void update(scene& env, double dt) override
+  {
+    highlighted = is_into_rect(env.GetMousePos());
+  }
+  virtual void draw(scene& env) override
+  {
+    env.DrawRectangle(highlighted ? colH : col, pos, size);
+  }
+};
+
+class rectangle_with_text : public rectangle
+{
+
+protected:
+  colorset tcol;
+  colorset tcolH;
+  string text;
+
+public:
+  rectangle_with_text(r_coordinates p, r_coordinates sz, colorset c, colorset cH, string t, colorset tc, colorset tcH) : rectangle(p, sz, c, cH)
+  {
+    tcol = tc;
+    tcolH = tcH;
+    text = t;
+  }
+  virtual void draw(scene& env) override
+  {
+    env.DrawRectangle(highlighted ? colH : col, pos, size);
+    env.DrawText(text, highlighted ? tcolH : tcol, pos, size);
+
+  }
+};
+
+class button_image : public rectangle_with_text
+{
+protected:
+  int code;
+  void (*callback_fun)(int x);
+public:
+  button_image(r_coordinates p, r_coordinates sz, colorset c, colorset cH, string t, colorset tc, colorset tcH, int cd, void(*f)(int x)) : rectangle_with_text(p, sz, c, cH, t, tc, tcH)
+  {
+    code = cd;
+    callback_fun = f;
+  }
+  virtual void update(scene& env, double dt) override
+  {
+    int state;
+    highlighted = is_into_rect(env.GetMousePosAndState(state));
+    if ((env.event_flags & _EVENT_MOUSE_UNPRESSED) && highlighted && callback_fun != nullptr)
+    {
+      callback_fun(code);
+      env.event_flags &= (!_EVENT_MOUSE_UNPRESSED);
+    }
+  }
+};
 
 class line_trace : public scene_object
 {
@@ -179,35 +379,26 @@ class line_trace : public scene_object
   {
   public:
 
-    coordinates pos;
+    r_coordinates pos;
     double angle;
     colorset col;
     double len;
     double width;
 
     one__line_trace_object(const line& parent);
-    void blur(double widthMultiplier = 1.25, double alphaMultiplier = 0.9, double lenMultipllier = 1.05);
+    void blur(double widthMultiplier = 1.2, double alphaMultiplier = 0.88, double lenMultipllier = 1.1);
     void draw(scene &env);
   };
 
 protected:
   list <one__line_trace_object> prints;
-  //line_trace(coordinates posI = coordinates(), double lenI = 0.1, int widthI = 1, coordinates speedI = coordinates(), double angleI = 0, double aspeedI = 0, colorset colI = colorset())
-  //{
-  //  pos = posI;
-  //  len = lenI;
-  //  width = widthI;
-  //  speed = speedI;
-  //  angle = angleI;
-  //  aspeed = aspeedI;
-  //  col = colI;
-  //}
+
 public:
   void addprint(const line& stepper);
   line_trace(const line& parent);
-  virtual hit_by iscollided(scene& env, double dt) override
+  virtual bool iscollided(scene& env, double dt) override
   {
-    return NONE;
+    return 0;
   }
   virtual void update(scene& env, double dt) override
   {
@@ -235,95 +426,10 @@ protected:
 
 public:
 
-  line(coordinates posI = coordinates(), double lenI = 0.1, int widthI = 1, coordinates speedI = coordinates(), double angleI = 0, double aspeedI = 0, colorset colI = colorset());
+  line(r_coordinates posI = r_coordinates(), double lenI = 0.1, int widthI = 1, r_coordinates speedI = r_coordinates(), double angleI = 0, double aspeedI = 0, colorset colI = colorset());
   ~line(void);
 
-  virtual hit_by iscollided(scene& env, double dt) override
-  {
-    coordinates next = pos + (speed*dt);
-    double anext = angle + aspeed * dt;
-    return (hit_by)((next + (coordinates(len) ^ anext)).withinrange(env.GetScreenLimits()) + (next - (coordinates(len) ^ anext)).withinrange(env.GetScreenLimits())); //dangerous but simple
-  }
-  
-  virtual void update(scene& env, double dt) override
-  {
-    static double dtTrace = 0;
-
-    if (iscollided(env, dt) == NONE || iscollided(env, dt) > 4)
-    {
-      pos += (speed * dt);
-      angle += aspeed * dt;
-      if (angle >= M_PI)
-          angle -= M_PI;
-    }
-    else
-    {
-      coordinates n, e;
-      coordinates V1, dV;
-      double V2;
-      hit_by hit = iscollided(env, dt);
-      
-      switch (hit)
-      {
-      case LEFT:
-          n = coordinates(1, 0);
-          e = coordinates(1, 0) ^ (angle > M_PI_2 ? angle - M_PI : angle);
-          break;
-      case RIGHT:
-          n = coordinates(-1, 0);
-          e = coordinates(1, 0) ^ (angle > M_PI_2 ? angle : angle - M_PI);
-          break;
-      case TOP:
-          n = coordinates(0, -1);
-          e = coordinates(1, 0) ^ (angle - M_PI);
-          break;
-      case BOTTOM:
-          n = coordinates(0, 1);
-          e = coordinates(1, 0) ^ angle;
-          break;
-      default:
-          exit(-1);
-          break;
-      }
-
-      
-      V1 = coordinates(e.y * aspeed, -e.x * aspeed);
-      V2 = ((speed + (V1 * len)) * n);
-      dV = n * (-V2);
-      //V2 = ((speed * speed) + (aspeed * aspeed * len * len)) / (((speed+dV) * (speed+dV)) + ((aspeed + (dV / e)) * (aspeed + (dV / e))));
-      dV = dV * (1 + (n * e));
-      //V2 = sqrt((speed * speed) + (aspeed * aspeed * len * len) - ((speed + dV) * (speed + dV)));
-      aspeed = ((dV / e) > 0 ? 1 : -1) * sqrt((speed * speed) + (aspeed * aspeed * len * len) - ((speed + dV) * (speed + dV))) / len;
-      speed += dV;
-      //aspeed += ((dV / e) / len * 2);
-    }
-
-    dtTrace += dt;
-    if (dtTrace > 0.1)
-    {
-      dtTrace -= 0.1;
-      tr->addprint(*this);
-      tr->update(env, dt);
-      col.r = (col.r + 10) % 255;
-      col.g = (col.g + 20) % 255;
-      col.b = (col.b + 30) % 255;
-    }
-    //col.r = (col.r + 10) % 255;
-    //col.g = (col.g + 20) % 255;
-    //col.b = (col.b + 30) % 255;
-  }
-
-  virtual void draw(scene& env) override
-  {
-    tr->draw(env);
-    env.DrawLine(col, pos + (coordinates(len) ^ angle), pos - (coordinates(len) ^ angle), width);
-    //SDL_RenderDrawPoint(env.GetRen(), pos.x_int(width, env.ScreenSize()), pos.y_int(height, env.ScreenSize())); TEST
-  }
+  virtual bool iscollided(scene& env, double dt) override;
+  virtual void update(scene& env, double dt) override;
+  virtual void draw(scene& env) override;
 };
-
-
-
-
-
-
-
